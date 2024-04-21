@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 # Volume fractions 
-thn = lambda y, x: np.cos(x)*np.sin(y)
+thn = lambda y, x: 0.25*np.cos(x)*np.sin(y)+0.5
 ths = lambda y, x: 1 - thn(y,x)
 
 def get_thn_vals(n, row_on_grid, col_on_grid, is_ths: bool=False):
@@ -100,18 +100,19 @@ def get_block_matrices(n, is_ths: bool=False):
 
         thn_im1_j, thn_i_j, _, _, _, _ = get_thn_vals(n,row_on_grid,col_on_grid-1, is_ths)
         thn_imh_j = 0.5*(thn_im1_j+thn_i_j)
+        thn_ip1_jph = 0.5*(thn_ip1_j+thn_ip1_jp1)
         # print(f'Thn(i+0.5, j+0.5) is {thn_iph_jph}). Thn(i+0.5,j-0.5) is {thn_iph_jmh}')
+
+        XI[row][row] = xi*thn_iph_j*(1-thn_iph_j)
+        XI[row+n*n][row+n*n] = xi*thn_ip1_jph*(1-thn_ip1_jph)
         
-        XI[row][row] = xi*thn((row_on_grid+0.5)*dy,col_on_grid*dx)*ths((row_on_grid+0.5)*dy,col_on_grid*dx)
-        XI[row+n*n][row+n*n] = xi*thn(row_on_grid*dy,(col_on_grid+0.5)*dx)*ths(row_on_grid*dy,(col_on_grid+0.5)*dx)
-        
-        G[row][row] = thn_imh_j  # Coeff of P(i,j)
+        G[row][row] = (1/dx)*thn_imh_j  # Coeff of P(i,j)
 
         # Coeff of P(i-1,j)
         if col_on_grid==0:
-            G[row][row_on_grid*n+(n-1)] = -thn_imh_j
+            G[row][row_on_grid*n+(n-1)] = -(1/dx)*thn_imh_j
         else:
-            G[row][row-1] = -thn_imh_j
+            G[row][row-1] = -(1/dx)*thn_imh_j
 
         L[row][row] = 1/(dx*dx)*(-thn_ip1_j-thn_i_j)+1/(dy*dy)*(-thn_iph_jph-thn_iph_jmh)   # Coeff of u_(i+0.5,j)
         D[row][row] = 1/dx*thn_iph_j # Coeff of u_(i+0.5,j)
@@ -196,13 +197,13 @@ def get_block_matrices(n, is_ths: bool=False):
 
         thn_i_jph = 0.5*(thn_i_j+thn_i_jp1)
 
-        G[nrow][row] = thn_i_jph   # Coeff of P(i,j)
+        G[nrow][row] = (1/dy)*thn_i_jph   # Coeff of P(i,j)
 
-        # Coeff of P(i,j-1)
+        # Coeff of P(i,j+1)
         if row_on_grid==0:
-            G[nrow][n*(n-1)+col_on_grid] = -thn_i_jph
+            G[nrow][n*(n-1)+col_on_grid] = -(1/dy)*thn_i_jph
         else:
-            G[nrow][row-n] = -thn_i_jph
+            G[nrow][row-n] = -(1/dy)*thn_i_jph
 
         # Coeff of v_(i,j+0.5)
         L[nrow][nrow] = -1/(dy*dy)*(thn_i_jp1+thn_i_j)-1/(dx*dx)*(thn_iph_jph+thn_imh_jph)                                          
