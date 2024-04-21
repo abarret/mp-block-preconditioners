@@ -103,19 +103,11 @@ def get_block_matrices(n, is_ths: bool=False):
         thn_ip1_jph = 0.5*(thn_ip1_j+thn_ip1_jp1)
         # print(f'Thn(i+0.5, j+0.5) is {thn_iph_jph}). Thn(i+0.5,j-0.5) is {thn_iph_jmh}')
 
+        # Note: u[0][0] is the first u(i+1/2,j) value.
         XI[row][row] = xi*thn_iph_j*(1-thn_iph_j)
         XI[row+n*n][row+n*n] = xi*thn_ip1_jph*(1-thn_ip1_jph)
-        
-        G[row][row] = (1/dx)*thn_imh_j  # Coeff of P(i,j)
-
-        # Coeff of P(i-1,j)
-        if col_on_grid==0:
-            G[row][row_on_grid*n+(n-1)] = -(1/dx)*thn_imh_j
-        else:
-            G[row][row-1] = -(1/dx)*thn_imh_j
 
         L[row][row] = 1/(dx*dx)*(-thn_ip1_j-thn_i_j)+1/(dy*dy)*(-thn_iph_jph-thn_iph_jmh)   # Coeff of u_(i+0.5,j)
-        D[row][row] = 1/dx*thn_iph_j # Coeff of u_(i+0.5,j)
 
         # No ghost cell handling needed for this:
         L[row][n*n+(n*row_on_grid)+col_on_grid] = 1/(dx*dy)*(-thn_ip1_j + thn_iph_jph)      # Coeff of v_(i+1,j+1/2)
@@ -124,10 +116,8 @@ def get_block_matrices(n, is_ths: bool=False):
         # Handle ghost cell values on the left edges before the left boundary
         if col_on_grid==0:
             L[row][(n-1)+row_on_grid*(n)] = 1/(dx*dx)*(thn_i_j)
-            D[row][(n-1)+row_on_grid*(n)] = -1/dx*thn_imh_j
         else:
             L[row][row-1] += 1/(dx*dx)*(thn_i_j)                        # Coeff of u_(i-0.5,j)
-            D[row][row-1] = -1/dx*thn_imh_j
 
         #Handle ghost cell values on the right edges after the right boundary
         if col_on_grid==(n-1):
@@ -151,26 +141,19 @@ def get_block_matrices(n, is_ths: bool=False):
         # Handle ghost cell values on horizontal edges before the left boundary
         if col_on_grid==0:
             L[row][n*n+((row_on_grid+1)*n)-1] = 1/(dy*dx)*(thn_i_j-thn_iph_jph)                         # Coeff of v_(i,j+1/2)
-            D[row][n*n+((row_on_grid+1)*n)-1] = 1/dy*(thn_i_jph)                                        # Coeff of v_(i,j+1/2)
 
             if row_on_grid==(n-1):
                 L[row][n*n+n-1] = 1/(dy*dx)*(thn_iph_jmh-thn_i_j)                                       # Coeff of v_(i,j-1/2)
-                D[row][n*n+n-1] = -1/dy*(thn_i_jmh)                                                     # Coeff of v_(i,j-1/2)
             else:
                 L[row][n*n+((row_on_grid+2)*n)-1] = 1/(dy*dx)*(thn_iph_jmh-thn_i_j)                     # Coeff of v_(i,j-1/2)
-                D[row][n*n+((row_on_grid+2)*n)-1] = -1/dy*(thn_i_jmh)                                   # Coeff of v_(i,j-1/2)
 
         else:  
             L[row][n*n+(n*row_on_grid)+(col_on_grid-1)] = 1/(dy*dx)*(thn_i_j-thn_iph_jph)               # Coeff of v_(i,j+1/2)
-            D[row][n*n+(n*row_on_grid)+(col_on_grid-1)] = 1/dy*(thn_i_jph)                              # Coeff of v_(i,j+1/2)
 
             if row_on_grid==(n-1):
                 L[row][n*n+(col_on_grid-1)] = 1/(dy*dx)*(thn_iph_jmh-thn_i_j)                           # Coeff of v_(i,j-1/2)
-                D[row][n*n+(col_on_grid-1)] = -1/dy*(thn_i_jmh)                 
-
             else:
                 L[row][n*n+(n*(row_on_grid+1))+(col_on_grid-1)] = 1/(dy*dx)*(thn_iph_jmh-thn_i_j)       # Coeff of v_(i,j-1/2)
-                D[row][n*n+(n*(row_on_grid+1))+(col_on_grid-1)] = -1/dy*(thn_i_jmh)            
 
         # Handle ghost cell values on horizontal edges below the bottom boundary
         if row_on_grid==(n-1):
@@ -189,14 +172,27 @@ def get_block_matrices(n, is_ths: bool=False):
 
         nrow = row+n*n
 
-        thn_i_j, thn_ip1_j, thn_i_jp1, thn_ip1_jp1, _, _ = get_thn_vals(n,row_on_grid,col_on_grid+1, is_ths)
+        thn_i_j, thn_ip1_j, thn_i_jp1, thn_ip1_jp1, thn_i_jm1, _ = get_thn_vals(n,row_on_grid,col_on_grid+1, is_ths)
         thn_im1_j, _, thn_im1_jp1, _, _, _ = get_thn_vals(n,row_on_grid,col_on_grid, is_ths)
         
         thn_imh_jph = 0.25*(thn_im1_j+thn_im1_jp1+thn_i_j+thn_i_jp1)
         thn_iph_jph = 0.25*(thn_i_j+thn_ip1_j+thn_i_jp1+thn_ip1_jp1)
 
         thn_i_jph = 0.5*(thn_i_j+thn_i_jp1)
+        thn_i_jmh = 0.5*(thn_i_j+thn_i_jm1)
+        thn_imh_j = 0.5*(thn_i_j+thn_im1_j)
+        thn_iph_j = 0.5*(thn_i_j+thn_ip1_j)
 
+        # Gradient in x-direction
+        G[row][row] = (1/dx)*thn_imh_j  # Coeff of P(i,j)
+
+        # Coeff of P(i-1,j)
+        if col_on_grid==0:
+            G[row][row_on_grid*n+(n-1)] = -(1/dx)*thn_imh_j  
+        else:
+            G[row][row-1] = -(1/dx)*thn_imh_j
+
+        # Gradient in y-direction
         G[nrow][row] = (1/dy)*thn_i_jph   # Coeff of P(i,j)
 
         # Coeff of P(i,j+1)
@@ -204,6 +200,25 @@ def get_block_matrices(n, is_ths: bool=False):
             G[nrow][n*(n-1)+col_on_grid] = -(1/dy)*thn_i_jph
         else:
             G[nrow][row-n] = -(1/dy)*thn_i_jph
+
+        # Divergence Operator
+        # Coeff of u_(i+0.5,j)
+        if col_on_grid==(n-1):
+            D[row][n*row_on_grid] = 1/dx*thn_iph_j   
+        else:
+            D[row][row+1] = 1/dx*thn_iph_j   
+
+        # Coeff of u_(i-0.5,j)
+        D[row][row] = -1/dx*thn_imh_j 
+
+        # Coeff of v_(i,j+0.5)
+        D[row][nrow] = 1/dy*thn_i_jph    
+
+        # Coeff of v_(i,j-0.5)
+        if row_on_grid==(n-1):
+            D[row][nrow-n*(n-1)] = -1/dy*thn_i_jmh        
+        else:       
+            D[row][nrow+n] = -1/dy*thn_i_jmh    
 
         # Coeff of v_(i,j+0.5)
         L[nrow][nrow] = -1/(dy*dy)*(thn_i_jp1+thn_i_j)-1/(dx*dx)*(thn_iph_jph+thn_imh_jph)                                          
@@ -233,7 +248,7 @@ def get_block_matrices(n, is_ths: bool=False):
             L[nrow][nrow+n] = 1/(dy*dy)*thn_i_j   
 
         # Coeff of u_(i-1/2,j)
-        # nrow-n*n is the same as n*row_on_grid+col_on_grid
+        # nrow-n*n == row. This is the same as n*row_on_grid+col_on_grid 
         L[nrow][nrow-n*n]= 1/(dx*dy)*(thn_imh_jph-thn_i_j)
 
         # Coeff of u_(i+1/2,j)
@@ -280,3 +295,5 @@ if __name__ == "__main__":
 
     G_mat = pd.DataFrame(G_n)
     G_mat.to_csv("G_matrix.csv", index=False, header=False)
+
+    # Check that operators are 2nd order accurate
