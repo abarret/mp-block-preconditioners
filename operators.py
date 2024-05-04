@@ -77,11 +77,10 @@ def get_thn_vals(n, row_on_grid, col_on_grid, is_ths: bool=False):
     else:
         return thn_i_j, thn_ip1_j, thn_i_jp1, thn_ip1_jp1, thn_i_jm1, thn_ip1_jm1
 
-def get_block_matrices(n, is_ths: bool=False):
+def get_block_matrices(n, xi, is_ths: bool=False):
 
     dx = 1/n
     dy = 1/n
-    xi = 1.0    # Drag coefficient
     
     # Sizes for a single phase. 
     L = np.zeros((2*n*n,2*n*n))   # 32-by-32 
@@ -293,14 +292,15 @@ def get_block_matrices(n, is_ths: bool=False):
 if __name__ == "__main__":
     write_to_csv = False
     check_divergence_op = False
-    check_gradient_op = True
-    check_xi_op = False
+    check_gradient_op = False
+    check_xi_op = True
     check_laplacian_op = False
     n = 32
+    xi = 1.0
     dx = 1/n
     dy = 1/n
-    L_n, D_n, XI_n, G_n = get_block_matrices(n, is_ths=False)
-    L_s, D_s, XI_s, G_s = get_block_matrices(n, is_ths=True)
+    L_n, D_n, XI_n, G_n = get_block_matrices(n, xi, is_ths=False)
+    L_s, D_s, XI_s, G_s = get_block_matrices(n, xi, is_ths=True)
 
     if write_to_csv:
         #Write the data to CSV files
@@ -368,6 +368,35 @@ if __name__ == "__main__":
             b_n_exact[row+n*n] = b_n_y_fcn(-row_on_grid*dy,(col_on_grid+0.5)*dx)        # y-component of exact RHS vector
 
         b_n_approx = np.matmul(G_n,p_n)
+        L2_norm = weightedL2(b_n_exact,b_n_approx,dx*dy)
+        L1_norm = weightedL1(b_n_exact,b_n_approx,dx*dy)
+        print(f"The L1_norm for n = {n} is {L1_norm}")
+        print(f"The L2_norm for n = {n} is {L2_norm}")
+
+    if check_xi_op:
+        u_n_x_fcn = lambda y,x: np.sin(2*PI*x)*np.cos(2*PI*y)
+        u_n_y_fcn = lambda y,x: np.cos(2*PI*x)*np.sin(2*PI*y)
+        u_n = np.zeros(2*n*n)   # 32-by-1 
+
+        b_n_x_fcn = lambda y,x: np.sin(2*PI*x)*np.cos(2*PI*y)
+        b_n_y_fcn = lambda y,x: np.cos(2*PI*x)*np.sin(2*PI*y)
+        b_n_exact = np.zeros(2*n*n)   # 32-by-1
+
+        for row in range(n*n):
+            if row < n:
+                row_on_grid = 0
+                col_on_grid = row
+            else:
+                row_on_grid = row//n
+                col_on_grid = row%n
+
+            #print((row_on_grid+0.5)*dy,col_on_grid*dx)
+            u_n[row]= u_n_x_fcn(-(row_on_grid+0.5)*dy,col_on_grid*dx)        # x-components of velocity
+            u_n[row+n*n] = u_n_y_fcn(-row_on_grid*dy,(col_on_grid+0.5)*dx)   # y-components of velocity
+            b_n_exact[row] = xi*thn(-(row_on_grid+0.5)*dy,(col_on_grid)*dx)*ths(-(row_on_grid+0.5)*dy,(col_on_grid)*dx)*b_n_x_fcn(-(row_on_grid+0.5)*dy,(col_on_grid)*dx)      # x-component of exact RHS vector
+            b_n_exact[row+n*n] = xi*thn(-row_on_grid*dy,(col_on_grid+0.5)*dx)*ths(-row_on_grid*dy,(col_on_grid+0.5)*dx)*b_n_y_fcn(-row_on_grid*dy,(col_on_grid+0.5)*dx)        # y-component of exact RHS vector
+
+        b_n_approx = np.matmul(XI_n,u_n)
         L2_norm = weightedL2(b_n_exact,b_n_approx,dx*dy)
         L1_norm = weightedL1(b_n_exact,b_n_approx,dx*dy)
         print(f"The L1_norm for n = {n} is {L1_norm}")
