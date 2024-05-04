@@ -204,13 +204,13 @@ def get_block_matrices(n, is_ths: bool=False):
             G[row][row-1] = -(1/dx)*thn_imh_j
 
         # Gradient in y-direction
-        G[nrow][row] = (1/dy)*thn_i_jph   # Coeff of P(i,j)
+        G[nrow][row] = -(1/dy)*thn_i_jph   # Coeff of P(i,j)
 
         # Coeff of P(i,j+1)
         if row_on_grid==0:
-            G[nrow][n*(n-1)+col_on_grid] = -(1/dy)*thn_i_jph
+            G[nrow][n*(n-1)+col_on_grid] = (1/dy)*thn_i_jph
         else:
-            G[nrow][row-n] = -(1/dy)*thn_i_jph
+            G[nrow][row-n] = (1/dy)*thn_i_jph
 
         # Divergence Operator
         # Coeff of u_(i+0.5,j)
@@ -292,6 +292,10 @@ def get_block_matrices(n, is_ths: bool=False):
 
 if __name__ == "__main__":
     write_to_csv = False
+    check_divergence_op = False
+    check_gradient_op = True
+    check_xi_op = False
+    check_laplacian_op = False
     n = 32
     dx = 1/n
     dy = 1/n
@@ -312,30 +316,59 @@ if __name__ == "__main__":
         G_mat = pd.DataFrame(G_n)
         G_mat.to_csv("G_matrix.csv", index=False, header=False)
 
-    # Check that Divergence operator is 2nd order accurate
-    u_n_x_fcn = lambda y,x: np.sin(2*PI*x)*np.cos(2*PI*y)
-    u_n_y_fcn = lambda y,x: np.cos(2*PI*x)*np.sin(2*PI*y)
-    u_n = np.zeros(2*n*n)   # 32-by-1 
+    if check_divergence_op:
+        # Check that Divergence operator is 2nd order accurate
+        u_n_x_fcn = lambda y,x: np.sin(2*PI*x)*np.cos(2*PI*y)
+        u_n_y_fcn = lambda y,x: np.cos(2*PI*x)*np.sin(2*PI*y)
+        u_n = np.zeros(2*n*n)   # 32-by-1 
 
-    # b_p_fcn = lambda y,x: 3*PI*np.cos(2*PI*x)*np.cos(2*PI*y)
-    b_p_fcn = lambda y,x: 2*PI*np.cos(2*PI*x)*np.cos(2*PI*y) + 1/2*PI*np.sin(4*PI*x)*np.sin(4*PI*y)
-    b_p_exact = np.zeros(n*n)   # 16-by-1
+        # b_p_fcn = lambda y,x: 3*PI*np.cos(2*PI*x)*np.cos(2*PI*y)
+        b_p_fcn = lambda y,x: 2*PI*np.cos(2*PI*x)*np.cos(2*PI*y) + 1/2*PI*np.sin(4*PI*x)*np.sin(4*PI*y)
+        b_p_exact = np.zeros(n*n)   # 16-by-1
 
-    for row in range(n*n):
-        if row < n:
-            row_on_grid = 0
-            col_on_grid = row
-        else:
-            row_on_grid = row//n
-            col_on_grid = row%n
+        for row in range(n*n):
+            if row < n:
+                row_on_grid = 0
+                col_on_grid = row
+            else:
+                row_on_grid = row//n
+                col_on_grid = row%n
 
-        #print((row_on_grid+0.5)*dy,col_on_grid*dx)
-        u_n[row]=u_n_x_fcn(-(row_on_grid+0.5)*dy,col_on_grid*dx)       # x-components of velocity
-        u_n[row+n*n] = u_n_y_fcn(-row_on_grid*dy,(col_on_grid+0.5)*dx) # y-components of velocity
-        b_p_exact[row] = b_p_fcn(-(row_on_grid+0.5)*dy,(col_on_grid+0.5)*dx)  # Exact RHS vector
+            #print((row_on_grid+0.5)*dy,col_on_grid*dx)
+            u_n[row]=u_n_x_fcn(-(row_on_grid+0.5)*dy,col_on_grid*dx)       # x-components of velocity
+            u_n[row+n*n] = u_n_y_fcn(-row_on_grid*dy,(col_on_grid+0.5)*dx) # y-components of velocity
+            b_p_exact[row] = b_p_fcn(-(row_on_grid+0.5)*dy,(col_on_grid+0.5)*dx)  # Exact RHS vector
 
-    b_n_approx = np.matmul(D_n,u_n)
-    L2_norm = weightedL2(b_p_exact,b_n_approx,dx*dy)
-    L1_norm = weightedL1(b_p_exact,b_n_approx,dx*dy)
-    print(f"The L1_norm for n = {n} is {L1_norm}")
-    print(f"The L2_norm for n = {n} is {L2_norm}")
+        b_p_approx = np.matmul(D_n,u_n)
+        L2_norm = weightedL2(b_p_exact,b_p_approx,dx*dy)
+        L1_norm = weightedL1(b_p_exact,b_p_approx,dx*dy)
+        print(f"The L1_norm for n = {n} is {L1_norm}")
+        print(f"The L2_norm for n = {n} is {L2_norm}")
+    
+    if check_gradient_op:
+        # Check that the Gradient operator is 2nd order accurate
+        p_fcn = lambda y,x: np.sin(2*PI*x)*np.cos(2*PI*y)
+        p_n = np.zeros(n*n)   # 16-by-1 
+
+        b_n_x_fcn = lambda y,x: PI/2*np.sin(2*PI*x)*np.sin(2*PI*y)*np.cos(2*PI*x)*np.cos(2*PI*y)+PI*np.cos(2*PI*x)*np.cos(2*PI*y)
+        b_n_y_fcn = lambda y,x: -PI/2*np.sin(2*PI*x)*np.sin(2*PI*x)*np.sin(2*PI*y)*np.sin(2*PI*y)-PI*np.sin(2*PI*x)*np.sin(2*PI*y)
+        b_n_exact = np.zeros(2*n*n)   # 32-by-1
+
+        for row in range(n*n):
+            if row < n:
+                row_on_grid = 0
+                col_on_grid = row
+            else:
+                row_on_grid = row//n
+                col_on_grid = row%n
+
+            #print((row_on_grid+0.5)*dy,col_on_grid*dx)
+            p_n[row]=p_fcn(-(row_on_grid+0.5)*dy,(col_on_grid+0.5)*dx)                # components of pressure
+            b_n_exact[row] = b_n_x_fcn(-(row_on_grid+0.5)*dy,(col_on_grid)*dx)          # x-component of exact RHS vector
+            b_n_exact[row+n*n] = b_n_y_fcn(-row_on_grid*dy,(col_on_grid+0.5)*dx)        # y-component of exact RHS vector
+
+        b_n_approx = np.matmul(G_n,p_n)
+        L2_norm = weightedL2(b_n_exact,b_n_approx,dx*dy)
+        L1_norm = weightedL1(b_n_exact,b_n_approx,dx*dy)
+        print(f"The L1_norm for n = {n} is {L1_norm}")
+        print(f"The L2_norm for n = {n} is {L2_norm}")
