@@ -1,11 +1,12 @@
 import numpy as np
 from typing import Tuple
+import scipy.linalg
 
 PI = np.pi
 
 # Volume fractions 
 def thn(y,x)->float:
-    thn = 0.25*np.sin(2*PI*x)*np.sin(2*PI*y)+0.5
+    thn = 0.75  # 0.25*np.sin(2*PI*x)*np.sin(2*PI*y)+0.5
     return thn
 
 def ths(y,x)->float:
@@ -300,3 +301,50 @@ class MultiphaseBlockPreconditioner:
                     L[nrow][n*(row_on_grid-1)+col_on_grid+1] =  1/(dy*dx)*(thn_iph_jph-thn_i_jp1)
 
         return L, D, XI, G
+    
+    def get_big_A_matrix(self, w):
+        dx = self.dx
+        dy = self.dy
+        n = self.n
+
+        zero_block = np.zeros((n*n,n*n))     # 16-by-16
+
+        L_n, D_n, XI_n, G_n = self.get_block_matrices(is_ths=False)
+        L_s, D_s, XI_s, G_s = self.get_block_matrices(is_ths=True)
+        L = scipy.linalg.block_diag(L_n, L_s)
+        D = np.hstack((D_n,D_s))
+        G = np.vstack((G_n,G_s))
+
+        w_thn = np.zeros((2*n*n, 2*n*n))   # 32-by-32
+        w_ths = np.zeros((2*n*n, 2*n*n))   # 32-by-32
+        for row in range(n*n):
+            if row < n:
+                row_on_grid = 0
+                col_on_grid = row
+            else:
+                row_on_grid = row//n
+                col_on_grid = row%n
+
+            w_thn[row][row] = w*thn(-(row_on_grid+0.5)*dy,(col_on_grid)*dx)      
+            w_thn[row+n*n][row+n*n] = w*thn(-row_on_grid*dy,(col_on_grid+0.5)*dx)
+
+            w_ths[row][row] = w*ths(-(row_on_grid+0.5)*dy,(col_on_grid)*dx)      
+            w_ths[row+n*n][row+n*n] = w*ths(-row_on_grid*dy,(col_on_grid+0.5)*dx)
+
+        w_thn_xi  = w_thn + XI_n
+        w_ths_xi  = w_ths + XI_s
+
+        XI_first_row = np.hstack((w_thn_xi, -XI_n))
+        XI_second_row = np.hstack((-XI_s, w_ths_xi))
+        XI = np.vstack((XI_first_row, XI_second_row))
+        A_block = XI + L
+
+        A_G = np.hstack((A_block,G))
+        D_zero = np.hstack((-D,zero_block))
+        A = np.vstack((A_G,D_zero))
+
+        inv_A = np.linalg.inv(A_block)
+        # Compute the Schur Complement: S = -D*A^-1*G
+        S_intermediate = np.matmul(-D,inv_A)
+        S = np.matmul(S_intermediate,G)
+        return A, S
