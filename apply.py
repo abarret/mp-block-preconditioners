@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 from preconditioner import MultiphaseBlockPreconditioner, thn, ths
+import matplotlib.pyplot as plt
+from scipy import sparse
 
 PI = np.pi
 
@@ -33,8 +35,8 @@ if __name__ == "__main__":
         G_mat = pd.DataFrame(G_n)
         G_mat.to_csv("G_matrix.csv", index=False, header=False)
 
-        A_mat = pd.DataFrame(big_A)
-        A_mat.to_csv("A_matrix.csv", index=False, header=False)
+        # A_mat = pd.DataFrame(big_A)
+        # A_mat.to_csv("A_matrix.csv", index=False, header=False)
     
     # Solution components
     u_n_x_fcn = lambda y,x: np.sin(2*PI*x)*np.cos(2*PI*y)  # x-component of Un
@@ -62,8 +64,8 @@ if __name__ == "__main__":
             b_p_exact[row] = b_p_fcn(-(row_on_grid+0.5)*dy,(col_on_grid+0.5)*dx)  # Exact RHS vector
 
         b_p_approx = np.matmul(D_n,u_n)
-        L2_norm = block_prec.weightedL2(b_p_exact,b_p_approx,dx*dy)
-        L1_norm = block_prec.weightedL1(b_p_exact,b_p_approx,dx*dy)
+        L2_norm = block_prec.weighted_L2(b_p_exact,b_p_approx,dx*dy)
+        L1_norm = block_prec.weighted_L1(b_p_exact,b_p_approx,dx*dy)
         print(f"Printing error norms for application of D:")
         print(f"The L1_norm for n = {n} is {L1_norm}")
         print(f"The L2_norm for n = {n} is {L2_norm}\n\n")
@@ -87,8 +89,8 @@ if __name__ == "__main__":
             b_n_exact[row+n*n] = b_n_y_fcn(-row_on_grid*dy,(col_on_grid+0.5)*dx)      # y-component of exact RHS vector
 
         b_n_approx = np.matmul(G_n,p_n)
-        L2_norm = block_prec.weightedL2(b_n_exact,b_n_approx,dx*dy)
-        L1_norm = block_prec.weightedL1(b_n_exact,b_n_approx,dx*dy)
+        L2_norm = block_prec.weighted_L2(b_n_exact,b_n_approx,dx*dy)
+        L1_norm = block_prec.weighted_L1(b_n_exact,b_n_approx,dx*dy)
         print(f"Printing error norms for application of G:")
         print(f"The L1_norm for n = {n} is {L1_norm}")
         print(f"The L2_norm for n = {n} is {L2_norm}\n\n")
@@ -112,8 +114,8 @@ if __name__ == "__main__":
             b_n_exact[row+n*n] = xi*thn(-row_on_grid*dy,(col_on_grid+0.5)*dx)*ths(-row_on_grid*dy,(col_on_grid+0.5)*dx)*b_n_y_fcn(-row_on_grid*dy,(col_on_grid+0.5)*dx)        # y-component of exact RHS vector
 
         b_n_approx = np.matmul(XI_n,u_n)
-        L2_norm = block_prec.weightedL2(b_n_exact,b_n_approx,dx*dy)
-        L1_norm = block_prec.weightedL1(b_n_exact,b_n_approx,dx*dy)
+        L2_norm = block_prec.weighted_L2(b_n_exact,b_n_approx,dx*dy)
+        L1_norm = block_prec.weighted_L1(b_n_exact,b_n_approx,dx*dy)
         print(f"Printing error norms for application of XI:")
         print(f"The L1_norm for n = {n} is {L1_norm}")
         print(f"The L2_norm for n = {n} is {L2_norm}\n\n")
@@ -138,8 +140,8 @@ if __name__ == "__main__":
             b_n_exact[row+n*n] = b_n_y_fcn(-row_on_grid*dy,(col_on_grid+0.5)*dx)    # y-component of exact RHS vector
 
         b_n_approx = np.matmul(L_n,u_n)
-        L2_norm = block_prec.weightedL2(b_n_exact,b_n_approx,dx*dy)
-        L1_norm = block_prec.weightedL1(b_n_exact,b_n_approx,dx*dy)
+        L2_norm = block_prec.weighted_L2(b_n_exact,b_n_approx,dx*dy)
+        L1_norm = block_prec.weighted_L1(b_n_exact,b_n_approx,dx*dy)
         print(f"Printing error norms for application of L:")
         print(f"The L1_norm for n = {n} is {L1_norm}")
         print(f"The L2_norm for n = {n} is {L2_norm}")
@@ -147,12 +149,14 @@ if __name__ == "__main__":
 
     # Apply operator
     c = 1.0
-    big_A, S = block_prec.get_big_A_matrix(w=-c)
-    A = -1.0*big_A  # To match with multiphase amr code. See MultiphaseStaggeredStokesOperator.h and apply_2d.uniThn.input
     d = -1.0
+    A, S = block_prec.get_big_A_matrix(c=c, d_u=d)
     nu = 1.0
     etan = 1.0
     etas = 1.0
+
+    # plt.spy(A)
+    # plt.show()
 
     # RHS vector components
     b_n_x_fcn = lambda y,x: (3*(2*c*nu-d*(16*etan*nu*PI*PI+xi))*np.cos(2*PI*y)*np.sin(2*PI*x))/(8*nu)
@@ -216,9 +220,11 @@ if __name__ == "__main__":
     b_approx = np.matmul(A,u_vec)
     
     # Calculate error norms
-    L2_norm = block_prec.weightedL2(b_vec,b_approx,dx*dy)
-    L1_norm = block_prec.weightedL1(b_vec,b_approx,dx*dy)
-    print(f"Printing error norms for application of L:")
-    print(f"The L1_norm for n = {n} is {L1_norm}")
-    print(f"The L2_norm for n = {n} is {L2_norm}")
+    L2_norm = block_prec.weighted_L2(b_vec[:2*n*n+1],b_approx[:2*n*n+1],dx*dy)
+    L1_norm = block_prec.weighted_L1(b_vec[:2*n*n+1],b_approx[:2*n*n+1],dx*dy)
+    max_norm = block_prec.max_norm(b_vec[:2*n*n+1],b_approx[:2*n*n+1])
+    print(f"Printing error norms for application of big A:")
+    print(f"The L1_norm in Un for n = {n} is {L1_norm}")
+    print(f"The L2_norm in Un for n = {n} is {L2_norm}")
+    print(f"The max_norm in Un for n = {n} is {max_norm}")
 

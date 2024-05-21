@@ -6,7 +6,7 @@ PI = np.pi
 
 # Volume fractions 
 def thn(y,x)->float:
-    thn = 0.75  # 0.25*np.sin(2*PI*x)*np.sin(2*PI*y)+0.5
+    thn = 0.75 # 0.25*np.sin(2*PI*x)*np.sin(2*PI*y)+0.5
     return thn
 
 def ths(y,x)->float:
@@ -20,16 +20,19 @@ class MultiphaseBlockPreconditioner:
         self.dy = 1/n
         self.xi = xi
         
-    def weightedL2(self,a,b,w):
-            q = a-b
-            return np.sqrt((w*q*q).sum())
+    def weighted_L2(self,a,b,w):
+        q = a-b
+        return np.sqrt((w*q*q).sum())
 
-    def weightedL1(self,a,b,w):
-            q = abs(a-b)
-            w_q= w*q
-            return w_q.sum()
+    def weighted_L1(self,a,b,w):
+        q = abs(a-b)
+        w_q= w*q
+        return w_q.sum()
 
-    def get_thn_vals(self, n, row_on_grid, col_on_grid, is_ths: bool=False)->Tuple:
+    def max_norm(self,a,b):
+        return max(abs(a-b))
+
+    def get_thn_vals(self, n, row_on_grid, col_on_grid, is_ths)->Tuple:
         dx = self.dx
         dy = self.dy
         
@@ -78,19 +81,18 @@ class MultiphaseBlockPreconditioner:
             thn_ip1_jm1 = thn(-(row_on_grid+1+0.5)*dy,(col_on_grid+0.5)*dx)
 
         if is_ths:
-            ths_i_j = 1-thn_i_j
-            ths_ip1_j = 1-thn_ip1_j
-            ths_i_jp1 = 1- thn_i_jp1
-            ths_ip1_jp1 = 1-thn_ip1_jp1
-            ths_i_jm1 = 1-thn_i_jm1
-            ths_ip1_jm1 = 1-thn_ip1_jm1
-
+            ths_i_j = 1.0 -thn_i_j
+            ths_ip1_j = 1.0 -thn_ip1_j
+            ths_i_jp1 = 1.0 - thn_i_jp1
+            ths_ip1_jp1 = 1.0 -thn_ip1_jp1
+            ths_i_jm1 = 1.0 -thn_i_jm1
+            ths_ip1_jm1 = 1.0 -thn_ip1_jm1
             return ths_i_j, ths_ip1_j, ths_i_jp1, ths_ip1_jp1, ths_i_jm1, ths_ip1_jm1
         
         else:
             return thn_i_j, thn_ip1_j, thn_i_jp1, thn_ip1_jp1, thn_i_jm1, thn_ip1_jm1
 
-    def get_block_matrices(self, is_ths: bool=False):
+    def get_block_matrices(self, is_ths):
         dx = self.dx
         dy = self.dy
         n = self.n
@@ -302,7 +304,7 @@ class MultiphaseBlockPreconditioner:
 
         return L, D, XI, G
     
-    def get_big_A_matrix(self, w):
+    def get_big_A_matrix(self, c, d_u, d_p: float = -1.0, d_div: float = 1.0):
         dx = self.dx
         dy = self.dy
         n = self.n
@@ -312,8 +314,8 @@ class MultiphaseBlockPreconditioner:
         L_n, D_n, XI_n, G_n = self.get_block_matrices(is_ths=False)
         L_s, D_s, XI_s, G_s = self.get_block_matrices(is_ths=True)
         L = scipy.linalg.block_diag(L_n, L_s)
-        D = np.hstack((D_n,D_s))
-        G = np.vstack((G_n,G_s))
+        D = np.hstack((d_div*D_n,d_div*D_s))
+        G = np.vstack((d_p*G_n,d_p*G_s))
 
         w_thn = np.zeros((2*n*n, 2*n*n))   # 32-by-32
         w_ths = np.zeros((2*n*n, 2*n*n))   # 32-by-32
@@ -325,22 +327,22 @@ class MultiphaseBlockPreconditioner:
                 row_on_grid = row//n
                 col_on_grid = row%n
 
-            w_thn[row][row] = w*thn(-(row_on_grid+0.5)*dy,(col_on_grid)*dx)      
-            w_thn[row+n*n][row+n*n] = w*thn(-row_on_grid*dy,(col_on_grid+0.5)*dx)
+            w_thn[row][row] = c*thn(-(row_on_grid+0.5)*dy,(col_on_grid)*dx)      
+            w_thn[row+n*n][row+n*n] = c*thn(-row_on_grid*dy,(col_on_grid+0.5)*dx)
 
-            w_ths[row][row] = w*ths(-(row_on_grid+0.5)*dy,(col_on_grid)*dx)      
-            w_ths[row+n*n][row+n*n] = w*ths(-row_on_grid*dy,(col_on_grid+0.5)*dx)
+            w_ths[row][row] = c*ths(-(row_on_grid+0.5)*dy,(col_on_grid)*dx)      
+            w_ths[row+n*n][row+n*n] = c*ths(-row_on_grid*dy,(col_on_grid+0.5)*dx)
 
-        w_thn_xi  = w_thn + XI_n
-        w_ths_xi  = w_ths + XI_s
+        w_thn_xi  = w_thn + d_u*XI_n
+        w_ths_xi  = w_ths + d_u*XI_s
 
-        XI_first_row = np.hstack((w_thn_xi, -XI_n))
-        XI_second_row = np.hstack((-XI_s, w_ths_xi))
+        XI_first_row = np.hstack((w_thn_xi, -d_u*XI_n))
+        XI_second_row = np.hstack((-d_u*XI_s, w_ths_xi))
         XI = np.vstack((XI_first_row, XI_second_row))
-        A_block = XI + L
+        A_block = XI + d_u*L
 
         A_G = np.hstack((A_block,G))
-        D_zero = np.hstack((-D,zero_block))
+        D_zero = np.hstack((D,zero_block))
         A = np.vstack((A_G,D_zero))
 
         inv_A = np.linalg.inv(A_block)
