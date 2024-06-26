@@ -10,7 +10,7 @@ def thn(y,x)->float:
     return thn
 
 def ths(y,x)->float:
-    ths = 1 - thn(y,x)
+    ths = 1.0 - thn(y,x)
     return ths
 
 class MultiphaseBlockPreconditioner:
@@ -19,18 +19,6 @@ class MultiphaseBlockPreconditioner:
         self.dx = 1/n
         self.dy = 1/n
         self.xi = xi
-        
-    def weighted_L2(self,a,b,w):
-        q = a-b
-        return np.sqrt((w*q*q).sum())
-
-    def weighted_L1(self,a,b,w):
-        q = abs(a-b)
-        w_q= w*q
-        return w_q.sum()
-
-    def max_norm(self,a,b):
-        return max(abs(a-b))
 
     def get_thn_vals(self, n, row_on_grid, col_on_grid, is_ths)->Tuple:
         dx = self.dx
@@ -129,8 +117,8 @@ class MultiphaseBlockPreconditioner:
             # print(f'Thn(i+0.5, j+0.5) is {thn_iph_jph}. Thn(i+0.5,j-0.5) is {thn_iph_jmh}')
 
             # Note: u[0][0] is the first u(i+1/2,j) value.
-            XI[row][row] = xi*thn_iph_j*(1-thn_iph_j)
-            XI[row+n*n][row+n*n] = xi*thn_ip1_jph*(1-thn_ip1_jph)
+            XI[row][row] = xi*thn_iph_j*(1.0-thn_iph_j)
+            XI[row+n*n][row+n*n] = xi*thn_ip1_jph*(1.0-thn_ip1_jph)
 
             L[row][row] = 1/(dx*dx)*(-thn_ip1_j-thn_i_j)+1/(dy*dy)*(-thn_iph_jph-thn_iph_jmh)   # Coeff of u_(i+0.5,j)
 
@@ -333,11 +321,11 @@ class MultiphaseBlockPreconditioner:
             w_ths[row][row] = c*ths(-(row_on_grid+0.5)*dy,(col_on_grid)*dx)      
             w_ths[row+n*n][row+n*n] = c*ths(-row_on_grid*dy,(col_on_grid+0.5)*dx)
 
-        w_thn_xi  = w_thn + d_u*XI_n
-        w_ths_xi  = w_ths + d_u*XI_s
+        w_thn_xi  = w_thn - d_u*XI_n
+        w_ths_xi  = w_ths - d_u*XI_s
 
-        XI_first_row = np.hstack((w_thn_xi, -d_u*XI_n))
-        XI_second_row = np.hstack((-d_u*XI_s, w_ths_xi))
+        XI_first_row = np.hstack((w_thn_xi, d_u*XI_n))
+        XI_second_row = np.hstack((d_u*XI_s, w_ths_xi))
         XI = np.vstack((XI_first_row, XI_second_row))
         A_block = XI + d_u*L
 
