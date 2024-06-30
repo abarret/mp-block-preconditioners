@@ -31,8 +31,10 @@ def write_to_csv(L_n, D_n, XI_n, G_n):
     G_mat.to_csv("G_matrix.csv", index=False, header=False)
 
 def check_individual_operators(n, xi, L_n, D_n, XI_n, G_n, check_laplacian_op, check_divergence_op, check_xi_op, check_gradient_op):
-    # Note, the exact solutions assume thn = 0.75 # 0.25*np.sin(2*PI*x)*np.sin(2*PI*y)+0.5
-    # So you need to update thn function in preconditioner.py
+    """
+    This function checks the convergence behavior for application of each block matrix.
+    Note, the exact solutions here assume thn = 0.25*np.sin(2*PI*x)*np.sin(2*PI*y)+0.5
+    """
 
     dx = 1/n
     dy = 1/n
@@ -145,7 +147,12 @@ def check_individual_operators(n, xi, L_n, D_n, XI_n, G_n, check_laplacian_op, c
         print(f"The L1_norm for n = {n} is {L1_norm}")
         print(f"The L2_norm for n = {n} is {L2_norm}\n\n")
     
-def apply_A_matrix(n, u_n_x_fcn, u_n_y_fcn, u_s_x_fcn, u_s_y_fcn, p_fcn, b_n_x_fcn, b_n_y_fcn, b_s_x_fcn, b_s_y_fcn, b_p_fcn):
+def fill_sol_and_RHS_vecs(n, u_n_x_fcn, u_n_y_fcn, u_s_x_fcn, u_s_y_fcn, p_fcn, b_n_x_fcn, b_n_y_fcn, b_s_x_fcn, b_s_y_fcn, b_p_fcn):
+    """
+    This function populates the solution and right-hand side vectors for a linear system of size n x n
+    using the lambda functions passed in as arguments.
+    """
+    
     dx = 1/n
     dy = 1/n
 
