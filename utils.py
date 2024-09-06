@@ -16,6 +16,15 @@ def weighted_L1(a,b,w):
 def max_norm(a,b):
         return max(abs(a-b))
 
+def print_norms(u_approx, u_vec, dx, dy, n, show_max=True):
+    L1_norm = weighted_L1(u_approx,u_vec,dx*dy)
+    L2_norm = weighted_L2(u_approx,u_vec,dx*dy)
+    print(f"The L1_norm for n = {n} is {L1_norm}")
+    print(f"The L2_norm for n = {n} is {L2_norm}")
+    if show_max:
+        Max_norm = max_norm(u_approx,u_vec)
+        print(f"The max_norm for n = {n} is {Max_norm}")
+
 def write_to_csv(L_n, D_n, XI_n, G_n):
     # Write the data to CSV files
     L_mat = pd.DataFrame(L_n)
