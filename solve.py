@@ -15,7 +15,7 @@ def main():
     """
 
     # Define the grid size and spacing
-    n = 8
+    n = 32
     dx = 1/n
     dy = 1/n
 
@@ -68,30 +68,20 @@ def main():
     u_vec, b_vec, u, p, b_u, b_p = fill_sol_and_RHS_vecs(n, u_n_x_fcn, u_n_y_fcn, u_s_x_fcn, u_s_y_fcn, p_fcn, 
                                     b_n_x_fcn, b_n_y_fcn, b_s_x_fcn, b_s_y_fcn, b_p_fcn)
     
-    def print_iteration():
+    def print_true_res_norm(A, b_vec):
         iteration = 0
-        def callback(residual_norm):
+        def callback(xk):
             nonlocal iteration
             iteration += 1
-            print(f"GMRES Iteration {iteration}: Residual norm = {residual_norm}")
-        return callback
-
-    
-    # Define the callback function that captures `b` from the outer scope
-    def make_callback(b):
-        norm_b = np.linalg.norm(b)  # Precompute the norm of b once
-
-        def callback(residual):
-            norm_r = np.linalg.norm(residual)   # Compute the norm of the residual
-            relative_residual = norm_r / norm_b  # Compute the relative residual
-            print(f"Relative residual norm: {relative_residual}")
-
+            residual = A @ xk - b_vec  # Compute the true residual
+            residual_norm = np.linalg.norm(residual)
+            print(f"GMRES Iteration {iteration}: True residual norm = {residual_norm}")
         return callback
 
     # least squares will take into account the null space. Tries to minimize A*u_approx-b.
     # u_approx, res, rnk, s = lstsq(A, b_vec) 
     print(f"\nPrinting error norms for solving Ax=b without preconditioner:")
-    u_approx, _ = gmres(A, b_vec,callback=print_iteration(), callback_type='legacy')                       
+    u_approx, _ = gmres(A, b_vec, rtol=1e-12, maxiter=20, callback=print_true_res_norm(A,b_vec), callback_type='x')                       
     print_norms(u_approx, u_vec, dx, dy, n)
 
     # Define the combined matvec function encapsulating all schur complement operations.
@@ -115,9 +105,9 @@ def main():
     combined_op = LinearOperator(shape=(m, m), matvec=exact_schur_op)
 
     print(f"\nPrinting error norms for solving Ax=b using GMRES with exact Schur complement as preconditioner:")
-    u_approx, _ = gmres(A, b_vec, M=combined_op, rtol=1e-5, maxiter=20, callback=print_iteration(), callback_type='legacy')  
+    u_approx, _ = gmres(A, b_vec, M=combined_op, rtol=1e-12, maxiter=20, callback=print_true_res_norm(A, b_vec), callback_type='x')  
     print_norms(u_approx, u_vec, dx, dy, n)
-    
+
     
     # mD = -1.0*D
     # Gt_G = np.matmul(mD,G)  # Note: G^T = D
@@ -179,7 +169,7 @@ def main():
 
     print(f"\nPrinting error norms for solving Ax=b using GMRES with approx schur complement as preconditioner:")
     # u_approx, _ = fgmres(A, b_vec, M=approx_schur, tol=1e-14, maxiter=20)  
-    u_approx, _ = gmres(A, b_vec, M=approx_schur, rtol=1e-8, maxiter=20, callback=print_iteration(), callback_type='legacy')  
+    u_approx, _ = gmres(A, b_vec, M=approx_schur, rtol=1e-12, maxiter=20, callback=print_true_res_norm(A,b_vec), callback_type='x')
     print_norms(u_approx, u_vec, dx, dy, n)
 
 if __name__ == "__main__":
