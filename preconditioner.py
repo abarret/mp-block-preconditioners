@@ -7,7 +7,7 @@ PI = np.pi
 
 # Volume fractions 
 def thn(y,x)->float:
-    thn = 0.25*np.sin(2*PI*x)*np.sin(2*PI*y)+0.5  #0.75
+    thn = 0.75 #0.25*np.sin(2*PI*x)*np.sin(2*PI*y)+0.5  #0.75
     return thn
 
 def ths(y,x)->float:

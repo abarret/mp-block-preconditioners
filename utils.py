@@ -14,7 +14,7 @@ def weighted_L1(a,b,w):
     return w_q.sum()
 
 def max_norm(a,b):
-        return max(abs(a-b))
+    return max(abs(a-b))
 
 def print_norms(u_approx, u_vec, dx, dy, n, show_max=True):
     L1_norm = weighted_L1(u_approx,u_vec,dx*dy)

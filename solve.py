@@ -5,7 +5,7 @@ from preconditioner import MultiphaseBlockPreconditioner
 import matplotlib.pyplot as plt
 from utils import PI
 from utils import fill_sol_and_RHS_vecs, print_norms
-from scipy.sparse.linalg import gmres, LinearOperator
+from scipy.sparse.linalg import gmres, LinearOperator, eigsh
 from scipy.linalg import lstsq, solve, svd
 from pyamg.krylov import fgmres
 
@@ -55,26 +55,43 @@ def main():
 
     b_p_fcn = lambda y,x: -2*PI*np.cos(2*PI*x)*np.cos(2*PI*y)
 
-    ########### For Thn = 0.25*np.sin(2*PI*x)*np.sin(2*PI*y) + 0.5 ############
-    # RHS vector components for variable thn. 
-    b_n_x_fcn = lambda y,x: (np.cos(2*PI*y)*np.sin(2*PI*x)*(4*c*nu-4*d*(8*etan*nu*PI*PI+xi)+2*nu*(c-16*d*etan*PI*PI)*np.sin(2*PI*x)*np.sin(2*PI*y)+d*xi*np.sin(2*PI*x)*np.sin(2*PI*x)*np.sin(2*PI*y)*np.sin(2*PI*y)))/(8*nu)
-    b_n_y_fcn = lambda y,x: (np.cos(2*PI*x)*np.sin(2*PI*y)*(4*c*nu-4*d*(8*etan*nu*PI*PI+xi)+2*nu*(c-16*d*etan*PI*PI)*np.sin(2*PI*x)*np.sin(2*PI*y)+d*xi*np.sin(2*PI*x)*np.sin(2*PI*x)*np.sin(2*PI*y)*np.sin(2*PI*y)))/(8*nu)
+    # ########### For Thn = 0.25*np.sin(2*PI*x)*np.sin(2*PI*y) + 0.5 ############
+    # # RHS vector components for variable thn. 
+    # b_n_x_fcn = lambda y,x: (np.cos(2*PI*y)*np.sin(2*PI*x)*(4*c*nu-4*d*(8*etan*nu*PI*PI+xi)+2*nu*(c-16*d*etan*PI*PI)*np.sin(2*PI*x)*np.sin(2*PI*y)+d*xi*np.sin(2*PI*x)*np.sin(2*PI*x)*np.sin(2*PI*y)*np.sin(2*PI*y)))/(8*nu)
+    # b_n_y_fcn = lambda y,x: (np.cos(2*PI*x)*np.sin(2*PI*y)*(4*c*nu-4*d*(8*etan*nu*PI*PI+xi)+2*nu*(c-16*d*etan*PI*PI)*np.sin(2*PI*x)*np.sin(2*PI*y)+d*xi*np.sin(2*PI*x)*np.sin(2*PI*x)*np.sin(2*PI*y)*np.sin(2*PI*y)))/(8*nu)
 
-    b_s_x_fcn = lambda y,x: (np.cos(2*PI*y)*np.sin(2*PI*x)*(-4*c*nu+4*d*(8*etas*nu*PI*PI+xi)+2*nu*(c-16*d*etas*PI*PI)*np.sin(2*PI*x)*np.sin(2*PI*y)-d*xi*np.sin(2*PI*x)*np.sin(2*PI*x)*np.sin(2*PI*y)*np.sin(2*PI*y)))/(8*nu)
-    b_s_y_fcn = lambda y,x: (np.cos(2*PI*x)*np.sin(2*PI*y)*(-4*c*nu+4*d*(8*etas*nu*PI*PI+xi)+2*nu*(c-16*d*etas*PI*PI)*np.sin(2*PI*x)*np.sin(2*PI*y)-d*xi*np.sin(2*PI*x)*np.sin(2*PI*x)*np.sin(2*PI*y)*np.sin(2*PI*y)))/(8*nu)
+    # b_s_x_fcn = lambda y,x: (np.cos(2*PI*y)*np.sin(2*PI*x)*(-4*c*nu+4*d*(8*etas*nu*PI*PI+xi)+2*nu*(c-16*d*etas*PI*PI)*np.sin(2*PI*x)*np.sin(2*PI*y)-d*xi*np.sin(2*PI*x)*np.sin(2*PI*x)*np.sin(2*PI*y)*np.sin(2*PI*y)))/(8*nu)
+    # b_s_y_fcn = lambda y,x: (np.cos(2*PI*x)*np.sin(2*PI*y)*(-4*c*nu+4*d*(8*etas*nu*PI*PI+xi)+2*nu*(c-16*d*etas*PI*PI)*np.sin(2*PI*x)*np.sin(2*PI*y)-d*xi*np.sin(2*PI*x)*np.sin(2*PI*x)*np.sin(2*PI*y)*np.sin(2*PI*y)))/(8*nu)
 
-    b_p_fcn = lambda y,x: -PI*np.sin(4*PI*x)*np.sin(4*PI*y)
+    # b_p_fcn = lambda y,x: -PI*np.sin(4*PI*x)*np.sin(4*PI*y)
 
     u_vec, b_vec, u, p, b_u, b_p = fill_sol_and_RHS_vecs(n, u_n_x_fcn, u_n_y_fcn, u_s_x_fcn, u_s_y_fcn, p_fcn, 
                                     b_n_x_fcn, b_n_y_fcn, b_s_x_fcn, b_s_y_fcn, b_p_fcn)
     
-    def print_iteration(residual_norm):
-        print(f"GMRES Iteration: Residual norm = {residual_norm}")
- 
+    def print_iteration():
+        iteration = 0
+        def callback(residual_norm):
+            nonlocal iteration
+            iteration += 1
+            print(f"GMRES Iteration {iteration}: Residual norm = {residual_norm}")
+        return callback
+
+    
+    # Define the callback function that captures `b` from the outer scope
+    def make_callback(b):
+        norm_b = np.linalg.norm(b)  # Precompute the norm of b once
+
+        def callback(residual):
+            norm_r = np.linalg.norm(residual)   # Compute the norm of the residual
+            relative_residual = norm_r / norm_b  # Compute the relative residual
+            print(f"Relative residual norm: {relative_residual}")
+
+        return callback
+
     # least squares will take into account the null space. Tries to minimize A*u_approx-b.
     # u_approx, res, rnk, s = lstsq(A, b_vec) 
     print(f"\nPrinting error norms for solving Ax=b without preconditioner:")
-    u_approx, _ = gmres(A, b_vec,callback=print_iteration, callback_type='legacy')                       
+    u_approx, _ = gmres(A, b_vec,callback=print_iteration(), callback_type='legacy')                       
     print_norms(u_approx, u_vec, dx, dy, n)
 
     # Define the combined matvec function encapsulating all schur complement operations.
@@ -97,8 +114,8 @@ def main():
     m = A_block.shape[0] + S.shape[0]
     combined_op = LinearOperator(shape=(m, m), matvec=exact_schur_op)
 
-    print(f"\nPrinting error norms for solving Ax=b using GMRES with preconditioner:")
-    u_approx, _ = gmres(A, b_vec, M=combined_op, rtol=1e-5, maxiter=20, callback=print_iteration, callback_type='legacy')  
+    print(f"\nPrinting error norms for solving Ax=b using GMRES with exact Schur complement as preconditioner:")
+    u_approx, _ = gmres(A, b_vec, M=combined_op, rtol=1e-5, maxiter=20, callback=print_iteration(), callback_type='legacy')  
     print_norms(u_approx, u_vec, dx, dy, n)
     
     
@@ -124,16 +141,14 @@ def main():
     def approx_schur_op(v):
         mD = -1.0*D
         Gt_G = np.matmul(mD,G)  # Note: G^T = D
-        Gt_G_inv = scipy.linalg.inv(Gt_G)
         Gt_F = np.matmul(mD,A_block)
-        Gt_F_G = np.matmul(Gt_F,G)
-        Fp = np.matmul(Gt_G_inv,Gt_F_G)
-        S_approx = np.matmul(Fp,Gt_G_inv)
-        S_inv = scipy.linalg.inv(S_approx)  
+        Gt_F_G = np.matmul(Gt_F,G) 
         A_inv = scipy.linalg.inv(A_block)  
         Ainv_v = np.matmul(A_inv,  v[:A_block.shape[1]])  # Dense solve on top left block. Note: lstsq makes it very slow
         rhs_interim = np.matmul(D, Ainv_v) +  v[A_block.shape[1]:]
-        x_p = np.matmul(S_inv, rhs_interim)
+        x_a = lstsq(Gt_G,rhs_interim)[0]
+        x_b = np.matmul(Gt_F_G,x_a)
+        x_p = lstsq(Gt_G,x_b)[0]
         G_xp = np.matmul(G, x_p)
         Ainv_G_xp = np.matmul(A_inv, G_xp) # OR solve(A_block, G_Sinv)
         u_approx_schur = Ainv_v - Ainv_G_xp
@@ -144,8 +159,27 @@ def main():
     m = A_block.shape[0] + S.shape[0]
     approx_schur = LinearOperator(shape=(m, m), matvec=approx_schur_op)
 
+    # WIP
+    # def preconditioned_A_op(b_vec):
+    #     # Apply GMRES with the preconditioner to the vector 'v'
+    #     result, _ = gmres(A, b_vec, M=approx_schur, rtol=1e-8, maxiter=20)
+    #     return result
+
+    # preconditioned_A = LinearOperator(shape=(m, m), matvec=preconditioned_A_op)
+
+    # # Print eigenvalues of the unpreconditioned system
+    # eigvals_unpreconditioned, _ = eigsh(A, k=5)  
+    # print("Eigenvalues of the unpreconditioned system:")
+    # print(eigvals_unpreconditioned)
+
+    # # Print eigenvalues of the preconditioned system
+    # eigvals_preconditioned, _ = eigsh(preconditioned_A, k=1)  
+    # print("Eigenvalues of the preconditioned system:")
+    # print(eigvals_preconditioned)
+
     print(f"\nPrinting error norms for solving Ax=b using GMRES with approx schur complement as preconditioner:")
-    u_approx, _ = fgmres(A, b_vec, M=approx_schur, tol=1e-14, maxiter=20)  
+    # u_approx, _ = fgmres(A, b_vec, M=approx_schur, tol=1e-14, maxiter=20)  
+    u_approx, _ = gmres(A, b_vec, M=approx_schur, rtol=1e-8, maxiter=20, callback=print_iteration(), callback_type='legacy')  
     print_norms(u_approx, u_vec, dx, dy, n)
 
 if __name__ == "__main__":
