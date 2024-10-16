@@ -11,3 +11,4 @@ python-dateutil==2.9.0.post0
 mpi4py==4.0.1
 petsc==3.22.0
 petsc4py==3.22.0
+slepc4py==3.22.0
