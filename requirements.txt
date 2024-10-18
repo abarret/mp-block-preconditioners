@@ -12,3 +12,4 @@ mpi4py==4.0.1
 petsc==3.22.0
 petsc4py==3.22.0
 slepc4py==3.22.0
+ilupp==1.0.2

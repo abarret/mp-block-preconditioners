@@ -1,17 +1,18 @@
 import numpy as np
-import pandas as pd
-import scipy
-from preconditioner import MultiphaseBlockPreconditioner
+from numpy import array, zeros, diag, diagflat, dot
 import matplotlib.pyplot as plt
-from utils import PI
-from utils import fill_sol_and_RHS_vecs, print_norms
-from scipy.sparse.linalg import gmres, LinearOperator, eigsh
-from numpy.linalg import eig
-from scipy.linalg import lstsq, solve, svd
-from pyamg.krylov import fgmres
-from sympy import Matrix, pretty
 from petsc4py import PETSc
 from slepc4py import SLEPc
+import ilupp
+import scipy
+from pyamg.krylov import fgmres
+from sympy import Matrix, pretty
+from scipy.sparse import csc_matrix
+from scipy.linalg import pinv, lstsq, solve, svd
+from scipy.sparse.linalg import spilu, splu, lsmr, gmres, LinearOperator
+
+from preconditioner import MultiphaseBlockPreconditioner
+from utils import PI, fill_sol_and_RHS_vecs, print_norms
 
 def main(n: int = 4, c: int = 1, d: int = -1, xi: float = 1.0, mu: float = 1.0):
     """
@@ -19,10 +20,10 @@ def main(n: int = 4, c: int = 1, d: int = -1, xi: float = 1.0, mu: float = 1.0):
 
     Args:
         n (int): Size of n x n matrix A. 
-        c (int): Coefficient of 
-        d (int): Coefficient of
-        xi (float): drag coefficient
-        mu (float): dynamic viscosity 
+        c (int): Use c non-zero to improve diagonal dominance i.e. adds c*U term.
+        d (int): Coefficient of viscous terms.
+        xi (float): Drag coefficient.
+        mu (float): Dynamic viscosity.
     
     Returns:
         Unpreconditioned matrix A of the form (F G; -D 0)
@@ -96,14 +97,13 @@ def main(n: int = 4, c: int = 1, d: int = -1, xi: float = 1.0, mu: float = 1.0):
 
     # Define the combined matvec function encapsulating all schur complement operations.
     def exact_schur_op(v):
-        A_inv = scipy.linalg.pinv(F)  # top left block
+        A_inv = pinv(F)  # top left block
         Ainv_v = lstsq(F,  v[:F.shape[1]])[0]  # Dense solve on top left block. Note: lstsq, solve and matmul(A_inv,b_u) give same result
         rhs_interim = np.matmul(D, Ainv_v) +  v[F.shape[1]:]
         x_p = -1.0*gmres(S, rhs_interim)[0]  # Using GMRES here gives 2nd order convergence, but lstsq doesn't and matmul(S_inv, rhs) doesn't.
         G_xp = np.matmul(G, x_p)
         Ainv_G_xp = np.matmul(A_inv, G_xp) # OR solve(F, G_Sinv)
         u_schur = Ainv_v - Ainv_G_xp  
-        # print(f"u_schur is {u_schur}")
         u_approx = np.concatenate((u_schur, x_p), axis=0)
         return u_approx
 
@@ -123,20 +123,34 @@ def main(n: int = 4, c: int = 1, d: int = -1, xi: float = 1.0, mu: float = 1.0):
     Gt_G = np.matmul(mD,G)  # Note: G^T = D
     Gt_F = np.matmul(mD,F)
     Gt_F_G = np.matmul(Gt_F,G) 
-    A_inv = scipy.linalg.pinv(F)  
-    Gt_G_inv = scipy.linalg.pinv(Gt_G)
+    A_inv = pinv(F)  
+    Gt_G_inv = pinv(Gt_G)
     S_int = Gt_F_G @ Gt_G_inv
     S_inv = Gt_G_inv @ S_int
-
+    
+    Gt_G_sparse = csc_matrix(Gt_G) 
+    Gt_G_factorization = spilu(Gt_G_sparse, drop_tol=1e-8, fill_factor=100) # Scipy's ILU didn't converge to right sol
+    Gt_G_factorization = ilupp.ILUTPreconditioner(Gt_G_sparse, fill_in=100, threshold=0.1) # This one does
+  
     # Define the combined matvec function encapsulating all schur complement operations.
     def approx_schur_op(v):
         Ainv_v = np.matmul(A_inv,  v[:F.shape[1]]) 
         rhs_interim = np.matmul(D, Ainv_v) +  v[F.shape[1]:]
-        x_a = lstsq(Gt_G,rhs_interim)[0]  
+        # v_int = v[F.shape[1]:]
+        # null_vec = np.ones(v_int.shape)
+        # x_a = Jacobi(Gt_G,rhs_interim,N=200,x=0*rhs_interim) # Getting contributions of the null space in the solution
+        # x_proj = dot(x_a,null_vec)/np.linalg.norm(null_vec) * null_vec
+        # x_a = x_a - x_proj
+        x_a = Gt_G_factorization @ (rhs_interim)  # using ILU
+        # x_a = lsmr(Gt_G, rhs_interim, atol=0.01, btol=0.01)[0] # Iterative(but exact ?) solver. In IBAMR, we would use Multigrid PC with Jacobi smoother
         x_b = np.matmul(Gt_F_G,x_a)
-        x_p = lstsq(Gt_G,x_b)[0]
+        # x_p = Jacobi(Gt_G,x_b,N=200,x=0*x_b)
+        # x_proj = dot(x_p,null_vec)/np.linalg.norm(null_vec) * null_vec
+        # x_p = x_p - x_proj
+        x_p = Gt_G_factorization @ (x_b)  # using ILU   
+        # x_p = lsmr(Gt_G, x_b, atol=0.01, btol=0.01)[0]
         G_xp = np.matmul(G, x_p)
-        Ainv_G_xp = np.matmul(A_inv, G_xp) # OR solve(F, G_Sinv)
+        Ainv_G_xp = np.matmul(A_inv, G_xp) # OR solve(F, G_Sinv) # Need F operator to use in IBAMR (probably use GMRES with multigrid PC)
         u_approx_schur = Ainv_v - Ainv_G_xp
         u_approx = np.concatenate((u_approx_schur, x_p))
         return u_approx    
@@ -145,14 +159,20 @@ def main(n: int = 4, c: int = 1, d: int = -1, xi: float = 1.0, mu: float = 1.0):
     m = F.shape[0] + S.shape[0]
     approx_schur = LinearOperator(shape=(m, m), matvec=approx_schur_op)
 
+    # # Any null space issues??
+    # print(f"\nPrinting error norms for solving Ax=b using fGMRES with approx schur complement as preconditioner:")
+    # #u_approx, _ = gmres(A, b_vec, M=approx_schur, rtol=1e-12, maxiter=20, callback=print_true_res_norm(A,b_vec), callback_type='x')
+    u_approx, _ = fgmres(A, b_vec, M=approx_schur, tol=1e-14, maxiter=30, callback=print_true_res_norm(A, b_vec))   
+    print_norms(u_approx, u_vec, dx, dy, n)
+
     # Get preconditioned system A * M^-1
     # Method (i)
     # n_s = 2*n*n+2*n*n+n*n
-    # M_inv = scipy.linalg.pinv(approx_schur@np.eye(n_s), rtol=1e-6)
+    # M_inv = pinv(approx_schur@np.eye(n_s), rtol=1e-6)
     # preconditioned_A = A @ M_inv
 
     # # Method (ii)
-    S_apprx = scipy.linalg.pinv(S_inv)
+    S_apprx = pinv(S_inv)
     top_block = np.hstack((F, G))
     zero_block = np.zeros((S_apprx.shape[0], F.shape[1]))  # A zero block of shape (rows_S, cols_F)
     bottom_block = np.hstack((zero_block, -S_apprx))
@@ -160,12 +180,8 @@ def main(n: int = 4, c: int = 1, d: int = -1, xi: float = 1.0, mu: float = 1.0):
     pre_A = A @ np.linalg.pinv(block_matrix)
 
     # Compute S*S^-1
-    S_Sinv = S @ scipy.linalg.pinv(S, rtol=1e-8)
+    S_Sinv = S @ pinv(S, rtol=1e-8)
     
-    print(f"\nPrinting error norms for solving Ax=b using fGMRES with approx schur complement as preconditioner:")
-    # u_approx, _ = gmres(A, b_vec, M=approx_schur, rtol=1e-12, maxiter=20, callback=print_true_res_norm(A,b_vec), callback_type='x')
-    u_approx, _ = fgmres(A, b_vec, x0 = x_initial, M=approx_schur, tol=1e-14, maxiter=20, callback=print_true_res_norm(A, b_vec))  
-    print_norms(u_approx, u_vec, dx, dy, n)
     return A, pre_A, S_Sinv
 
 def print_ev_from_sympy(A, pre_A):
@@ -221,6 +237,19 @@ def print_eigenvals(test_mat: np.ndarray, name: str):
     A_petsc.destroy()
     eps.destroy()
 
+def Jacobi(A, b, N, x):
+                                                                                                                                                                   
+    # (1) Create a vector using the diagonal elemts of A
+    D = diag(A)
+    # (2) Subtract D vector from A into the new vector R
+    R = A - diagflat(D)
+
+    # (3) We must Iterate for N times                                                                                                                                                                          
+    for i in range(N):
+        x = (b - dot(R,x)) / D
+    return x
+
+
 if __name__ == "__main__":
 
     # Solve the system
@@ -231,3 +260,4 @@ if __name__ == "__main__":
     print_eigenvals(test_mat=pre_A, name="Preconditioned A")
     print_eigenvals(test_mat=A, name="Unpreconditioned A")
     print_eigenvals(test_mat=S_Sinv, name="S*Sinv")
+    # TODO: plot eigenvalues

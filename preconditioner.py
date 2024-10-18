@@ -94,7 +94,6 @@ class MultiphaseBlockPreconditioner:
         D = np.zeros((n*n,2*n*n))     # 16-by-32
         XI = np.zeros((2*n*n,2*n*n))  # 32-by-32
         G = np.zeros((2*n*n,n*n))     # 32-by-16
-        THETA_MU = np.zeros((2*n*n,2*n*n))  # 32-by-32 Needed for approximate schur complement
 
         # The first n*n rows of L correspond to the u unknowns
         # Row of L corresponding to unknown u(i,j)
@@ -124,9 +123,6 @@ class MultiphaseBlockPreconditioner:
             # Note: u[0][0] is the first u(i+1/2,j) value.
             XI[row][row] = xi*thn_iph_j*(1.0-thn_iph_j)
             XI[row+n*n][row+n*n] = xi*thn_ip1_jph*(1.0-thn_ip1_jph)
-
-            THETA_MU[row][row] = mu*thn_iph_j
-            THETA_MU[row+n*n][row+n*n] = mu*thn_iph_j
 
             L[row][row] = 1/(dx*dx)*(-thn_ip1_j-thn_i_j)+1/(dy*dy)*(-thn_iph_jph-thn_iph_jmh)   # Coeff of u_(i+0.5,j)
 
@@ -298,7 +294,7 @@ class MultiphaseBlockPreconditioner:
                 else:
                     L[nrow][n*(row_on_grid-1)+col_on_grid+1] =  1/(dy*dx)*(thn_iph_jph-thn_i_jp1)
 
-        return L, D, XI, G, THETA_MU
+        return L, D, XI, G
     
     def get_big_A_matrix(self, c, d_u, d_p: float = 1.0, d_div: float = -1.0):
         dx = self.dx
@@ -307,8 +303,8 @@ class MultiphaseBlockPreconditioner:
 
         zero_block = np.zeros((n*n,n*n))     # 16-by-16
 
-        L_n, D_n, XI_n, G_n, Thn_n_mu = self.get_block_matrices(is_ths=False)
-        L_s, D_s, XI_s, G_s, Thn_s_mu = self.get_block_matrices(is_ths=True)
+        L_n, D_n, XI_n, G_n = self.get_block_matrices(is_ths=False)
+        L_s, D_s, XI_s, G_s = self.get_block_matrices(is_ths=True)
         L = scipy.linalg.block_diag(L_n, L_s)
         D = np.hstack((D_n,D_s))
         minus_D = d_div*D
@@ -336,26 +332,16 @@ class MultiphaseBlockPreconditioner:
         XI_first_row = np.hstack((w_thn_xi, d_u*XI_n))
         XI_second_row = np.hstack((d_u*XI_s, w_ths_xi))
         XI = np.vstack((XI_first_row, XI_second_row))
-        A_block = XI + d_u*L
+        F = XI + d_u*L
 
-        A_G = np.hstack((A_block,G))
+        F_G = np.hstack((F,G))
         D_zero = np.hstack((minus_D,zero_block))
-        A = np.vstack((A_G,D_zero))
+        A = np.vstack((F_G,D_zero))
 
         # Compute the Schur Complement: S = -D*A^-1*G
-        inv_A = scipy.linalg.inv(A_block)
+        inv_A = scipy.linalg.inv(F)
         S_intermediate = np.matmul(minus_D,inv_A)  # D has already been mutliplied by -1 
         S = np.matmul(S_intermediate,G)
 
-        # Compute approximate Schur Complement:
-        XI_inv = scipy.linalg.inv(XI)
-        Theta_mu = scipy.linalg.block_diag(Thn_n_mu, Thn_s_mu)   # wrong?
-        Theta_mu = 2*Theta_mu
-        Lp = np.matmul(D,XI_inv)
-        Lp = np.matmul(Lp,G)
-        Lp_inv = scipy.linalg.inv(Lp)
-        # print(Lp_inv.size)
-        # print(Theta_mu.size)
-        # Approx_S_inv = -c*Lp_inv+Theta_mu    # size of Theta_mu matrix?
 
-        return A, S, A_block, D, G
+        return A, S, F, D, G
