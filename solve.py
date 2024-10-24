@@ -92,7 +92,7 @@ def main(n: int = 4, c: int = 1, d: int = -1, xi: float = 1.0, mu: float = 1.0):
     x_initial = np.zeros(2*n*n+2*n*n+n*n)
     print(f"\nPrinting error norms for solving Ax=b using fGMRES without preconditioner:")
     # u_approx, _ = gmres(A, b_vec, M=None, x0 = x_initial, rtol=1e-14, restart=20, maxiter=30, callback=print_true_res_norm(A,b_vec), callback_type='x')                       
-    u_approx, _ = fgmres(A, b_vec, M=None, x0 = x_initial, tol=1e-14, maxiter=100, callback=print_true_res_norm(A, b_vec))  
+    u_approx, _ = fgmres(A, b_vec, M=None, x0 = x_initial, tol=1e-8, maxiter=100, callback=print_true_res_norm(A, b_vec))  
     print_norms(u_approx, u_vec, dx, dy, n)
 
     # Define the combined matvec function encapsulating all schur complement operations.
@@ -107,35 +107,35 @@ def main(n: int = 4, c: int = 1, d: int = -1, xi: float = 1.0, mu: float = 1.0):
         u_approx = np.concatenate((u_schur, x_p), axis=0)
         return u_approx
 
-    u_approx = exact_schur_op(b_vec)
-    print(f"\nPrinting error norms for solving Ax=b using schur complement:")
-    print_norms(u_approx, u_vec, dx, dy, n)
+    # u_approx = exact_schur_op(b_vec)
+    # print(f"\nPrinting error norms for solving Ax=b using schur complement:")
+    # print_norms(u_approx, u_vec, dx, dy, n)
 
-    # Define custom preconditioner as a LinearOperator
-    m = F.shape[0] + S.shape[0]
-    exact_schur = LinearOperator(shape=(m, m), matvec=exact_schur_op)
+    # # Define custom preconditioner as a LinearOperator
+    # m = F.shape[0] + S.shape[0]
+    # exact_schur = LinearOperator(shape=(m, m), matvec=exact_schur_op)
 
-    print(f"\nPrinting error norms for solving Ax=b using GMRES with exact Schur complement as preconditioner:")
-    u_approx, _ = fgmres(A, b_vec, M=exact_schur, tol=1e-8, maxiter=40, callback=print_true_res_norm(A, b_vec))  
-    print_norms(u_approx, u_vec, dx, dy, n)
+    # print(f"\nPrinting error norms for solving Ax=b using GMRES with exact Schur complement as preconditioner:")
+    # u_approx, _ = fgmres(A, b_vec, M=exact_schur, tol=1e-8, maxiter=40, callback=print_true_res_norm(A, b_vec))  
+    # print_norms(u_approx, u_vec, dx, dy, n)
     
     mD = -1.0*D
     Gt_G = np.matmul(mD,G)  # Note: G^T = D
     Gt_F = np.matmul(mD,F)
     Gt_F_G = np.matmul(Gt_F,G) 
-    A_inv = pinv(F)  
+    F_inv = pinv(F)  
     Gt_G_inv = pinv(Gt_G)
     S_int = Gt_F_G @ Gt_G_inv
     S_inv = Gt_G_inv @ S_int
     
     Gt_G_sparse = csc_matrix(Gt_G) 
     Gt_G_factorization = spilu(Gt_G_sparse, drop_tol=1e-8, fill_factor=100) # Scipy's ILU didn't converge to right sol
-    Gt_G_factorization = ilupp.ILUTPreconditioner(Gt_G_sparse, fill_in=100, threshold=0.1) # This one does
+    Gt_G_factorization = ilupp.ILUTPreconditioner(Gt_G_sparse, fill_in=100, threshold=0.001) # This one does
   
     # Define the combined matvec function encapsulating all schur complement operations.
     def approx_schur_op(v):
-        Ainv_v = np.matmul(A_inv,  v[:F.shape[1]]) 
-        rhs_interim = np.matmul(D, Ainv_v) +  v[F.shape[1]:]
+        Finv_v = np.matmul(F_inv,  v[:F.shape[1]])
+        rhs_interim = np.matmul(D, Finv_v) +  v[F.shape[1]:]
         # v_int = v[F.shape[1]:]
         # null_vec = np.ones(v_int.shape)
         # x_a = Jacobi(Gt_G,rhs_interim,N=200,x=0*rhs_interim) # Getting contributions of the null space in the solution
@@ -150,8 +150,8 @@ def main(n: int = 4, c: int = 1, d: int = -1, xi: float = 1.0, mu: float = 1.0):
         x_p = Gt_G_factorization @ (x_b)  # using ILU   
         # x_p = lsmr(Gt_G, x_b, atol=0.01, btol=0.01)[0]
         G_xp = np.matmul(G, x_p)
-        Ainv_G_xp = np.matmul(A_inv, G_xp) # OR solve(F, G_Sinv) # Need F operator to use in IBAMR (probably use GMRES with multigrid PC)
-        u_approx_schur = Ainv_v - Ainv_G_xp
+        Finv_G_xp = np.matmul(F_inv,G_xp) #gmres(F, G_xp)[0] # Need F operator to use in IBAMR (probably use GMRES with multigrid PC)
+        u_approx_schur = Finv_v - Finv_G_xp
         u_approx = np.concatenate((u_approx_schur, x_p))
         return u_approx    
 
@@ -160,9 +160,9 @@ def main(n: int = 4, c: int = 1, d: int = -1, xi: float = 1.0, mu: float = 1.0):
     approx_schur = LinearOperator(shape=(m, m), matvec=approx_schur_op)
 
     # # Any null space issues??
-    # print(f"\nPrinting error norms for solving Ax=b using fGMRES with approx schur complement as preconditioner:")
+    print(f"\nPrinting error norms for solving Ax=b using fGMRES with approx schur complement as preconditioner:")
     # #u_approx, _ = gmres(A, b_vec, M=approx_schur, rtol=1e-12, maxiter=20, callback=print_true_res_norm(A,b_vec), callback_type='x')
-    u_approx, _ = fgmres(A, b_vec, M=approx_schur, tol=1e-14, maxiter=30, callback=print_true_res_norm(A, b_vec))   
+    u_approx, _ = fgmres(A, b_vec, M=approx_schur, tol=1e-8, maxiter=30, callback=print_true_res_norm(A, b_vec))   
     print_norms(u_approx, u_vec, dx, dy, n)
 
     # Get preconditioned system A * M^-1
@@ -201,7 +201,7 @@ def print_ev_from_sympy(A, pre_A):
     print("Eigenvalues of preconditioned system:")
     print(pretty(M.eigenvals(multiple=True, rational=True)))
           
-def print_eigenvals(test_mat: np.ndarray, name: str):
+def get_eigenvals(test_mat: np.ndarray, name: str, view: bool = False):
     """
     This function outputs the converged eigenvalues for the input matrix test_mat.
 
@@ -230,12 +230,22 @@ def print_eigenvals(test_mat: np.ndarray, name: str):
     eps.setTolerances(max_it=40)
     eps.setFromOptions()
 
-    print(f"{name}:")
-    PETSc.Options().setValue("-eps_view_values", "")
+    if view:
+        print(f"{name}:")
+        PETSc.Options().setValue("-eps_view_values", "")
+
     eps.solve()
+    n_conv = eps.getConverged()
+
+    eigenvalues = []
+    for i in range(n_conv):
+        real_part = eps.getEigenvalue(i)
+        eigenvalues.append(real_part)
 
     A_petsc.destroy()
     eps.destroy()
+
+    return eigenvalues
 
 def Jacobi(A, b, N, x):
                                                                                                                                                                    
@@ -257,7 +267,24 @@ if __name__ == "__main__":
 
     # Compute eigenvalues of A and preconditioned A
     print("\n")
-    print_eigenvals(test_mat=pre_A, name="Preconditioned A")
-    print_eigenvals(test_mat=A, name="Unpreconditioned A")
-    print_eigenvals(test_mat=S_Sinv, name="S*Sinv")
-    # TODO: plot eigenvalues
+    precon_ev = get_eigenvals(test_mat=pre_A, name="Preconditioned A")
+    unprecon_ev = get_eigenvals(test_mat=A, name="Unpreconditioned A")
+    # S_Sinv_ev = get_eigenvals(test_mat=S_Sinv, name="S*Sinv")
+
+    plt.figure()
+    plt.plot(unprecon_ev, 'o', label="Unpreconditioned A")
+    plt.title("Eigenvalues of Unpreconditioned A")
+    plt.xlabel("Index")
+    plt.ylabel("Eigenvalue")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    plt.figure()
+    plt.plot(precon_ev, 'o', label="Preconditioned A")
+    plt.title("Eigenvalues of Preconditioned A")
+    plt.xlabel("Index")
+    plt.ylabel("Eigenvalue")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
