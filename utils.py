@@ -207,4 +207,4 @@ def fill_sol_and_RHS_vecs(n, u_n_x_fcn, u_n_y_fcn, u_s_x_fcn, u_s_y_fcn, p_fcn, 
     u_vec = np.concatenate((u_n,u_s,p))
     b_vec = np.concatenate((b_n,b_s,b_p))
 
-    return u_vec, b_vec, u, p, b_u, b_p
+    return u_vec, b_vec

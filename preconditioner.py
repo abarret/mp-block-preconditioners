@@ -15,12 +15,13 @@ def ths(y,x)->float:
     return ths
 
 class MultiphaseBlockPreconditioner:
-    def __init__(self, n, xi, mu):
+    def __init__(self, n, xi, eta_n, eta_s):
         self.n = n
         self.dx = 1/n
         self.dy = 1/n
         self.xi = xi
-        self.mu = mu
+        self.eta_n = eta_n
+        self.eta_s = eta_s
 
     def get_thn_vals(self, n, row_on_grid, col_on_grid, is_ths)->Tuple:
         dx = self.dx
@@ -87,7 +88,6 @@ class MultiphaseBlockPreconditioner:
         dy = self.dy
         n = self.n
         xi = self.xi
-        mu = self.mu
 
         # Sizes for a single phase. 
         L = np.zeros((2*n*n,2*n*n))   # 32-by-32 
@@ -300,12 +300,14 @@ class MultiphaseBlockPreconditioner:
         dx = self.dx
         dy = self.dy
         n = self.n
+        eta_n = self.eta_n
+        eta_s = self.eta_s
 
         zero_block = np.zeros((n*n,n*n))     # 16-by-16
 
         L_n, D_n, XI_n, G_n = self.get_block_matrices(is_ths=False)
         L_s, D_s, XI_s, G_s = self.get_block_matrices(is_ths=True)
-        L = scipy.linalg.block_diag(L_n, L_s)
+        L = scipy.linalg.block_diag(eta_n*L_n, eta_s*L_s)
         D = np.hstack((D_n,D_s))
         minus_D = d_div*D
         G = np.vstack((d_p*G_n,d_p*G_s))
